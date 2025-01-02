@@ -118,6 +118,13 @@ def plot_label_distribution(num_users, train_set_group):
     plt.title("Display Label Distribution on Different Clients")
     plt.show()
 
+def get_client_alpha(train_set_group):
+    client_n_sample = [len(ts.idxs) for ts in train_set_group]
+    total_n_sample = sum(client_n_sample)
+    client_alpha = [n_sample / total_n_sample for n_sample in client_n_sample]
+    # print(f'alpha = {client_alpha}')
+    return client_alpha
+
 if __name__ == '__main__':
     # 设置参数
     num_users = 10  # 假设有10个客户端

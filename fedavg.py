@@ -6,10 +6,10 @@ import torch
 from matplotlib import pyplot as plt
 from torch import optim
 from torch import nn
-from dirichlet_data import *
+# from dirichlet_data import *
 from model import BasicCNN as Model
 from model import weight_init
-from dataset import dirichlet_split, plot_label_distribution
+from dataset import dirichlet_split, plot_label_distribution, get_client_alpha
 
 class FedSystem(object):
     def __init__(self, args):
