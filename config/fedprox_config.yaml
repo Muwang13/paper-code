@@ -1,0 +1,16 @@
+system:
+  num_client: 20
+  num_local_class: 2
+  dataset: "CIFAR10"
+  model: "AlexCifarNet"
+  i_seed: 2352351
+  num_round: 100
+  res_root: "results/cifar10"
+
+client:
+  fed_algo: "FedProx"
+  lr: 0.01
+  batch_size: 128
+  num_local_epoch: 3
+  momentum: 0.9
+  num_worker: 2

@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from matplotlib import pyplot as plt
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
@@ -124,6 +125,37 @@ def get_client_alpha(train_set_group):
     client_alpha = [n_sample / total_n_sample for n_sample in client_n_sample]
     # print(f'alpha = {client_alpha}')
     return client_alpha
+
+def get_client_beta(train_set_group):
+    # client_n_sample = [len(ts.idxs) for ts in train_set_group]
+    # total_n_sample = sum(client_n_sample)
+    client_entropy = []
+    labels_num = []
+    for ts in train_set_group:
+        targets = [ts.dataset.targets[idx] for idx in ts.idxs]
+        labels = set(targets)
+        labels_num.append(len(labels))
+        counts = [targets.count(label) for label in labels]
+        client_entropy.append(get_entropy(counts))
+
+    # client_beta = [i*j for i,j in zip(client_n_sample, client_entropy)]
+    # total = sum(client_beta)
+    # client_beta = [x/total for x in client_beta]
+    print(f"label classes: {labels_num}")
+    return client_entropy
+
+# 计算信息熵：进一步细化到[1, num]，其中 num 为标签类别总数
+def get_entropy(list):
+    entropy = 0
+    total = sum(list)
+    list = [i / total for i in list]
+
+    for p in list:
+        entropy -= p * math.log(p, 2)
+
+    # entropy = pow(2,entropy)
+
+    return entropy
 
 if __name__ == '__main__':
     # 设置参数

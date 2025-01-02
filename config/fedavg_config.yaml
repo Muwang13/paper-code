@@ -1,0 +1,19 @@
+
+# Cifar10
+system:
+  num_client: 20
+  # num_local_class: 4
+  dataset: "cifar10"
+  model: "BasicCNN"
+  i_seed: 10001
+  num_round: 300
+  res_root: "results/fedavg"
+  weight: 'data_size'   # 'data_size' or 'uniform' or 'entropy' or 'data_size_entropy'
+
+client:
+  # fed_algo: "FedAvg"
+  lr: 0.01
+  batch_size: 128
+  num_local_epoch: 1
+  # momentum: 0.9
+  num_worker: 2
