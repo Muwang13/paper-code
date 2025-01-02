@@ -9,6 +9,7 @@ from torch import nn
 from dirichlet_data import *
 from model import BasicCNN as Model
 from model import weight_init
+from dataset import dirichlet_split, plot_label_distribution
 
 class FedSystem(object):
     def __init__(self, args):
@@ -18,9 +19,10 @@ class FedSystem(object):
         # self.server_omega = dict()
         # self.client_omega_set = [dict() for _ in range(args.n_client)]
 
-        self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client, alpha=args.alpha)
+        # self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client, alpha=args.alpha)
+        self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client, alpha=args.alpha, num_samples_per_client=3000)
         # 绘制客户端的数据标签分布
-        self.plot_label_distribution(self.train_set_group)
+        plot_label_distribution(args.n_client, self.train_set_group)
         print("客户端数据量：", [len(ts.idxs) for ts in self.train_set_group])
         self.train_loader_group = [DataLoader(train_set, batch_size=args.train_batch_size, shuffle=True) for train_set in self.train_set_group]
         self.test_loader = DataLoader(self.test_set, batch_size=args.test_batch_size, shuffle=True)
@@ -114,7 +116,7 @@ class FedSystem(object):
                     args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
 
                 # 保存模型
-                torch.save(self.server_model,'models/fedavg/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.pt'.format(
+                torch.save(self.server_model,'results/fedavg/models/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.pt'.format(
                      args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
             end_time = time.time()
             print('---epoch time: %s seconds ---' % round((end_time - start_time), 2))
@@ -169,34 +171,34 @@ class FedSystem(object):
             n_test += data.size(0)
         return correct / n_test
 
-    def plot_label_distribution(self, train_set_group):
-        labels = train_set_group[0].dataset.targets
-
-        client_idx = [item.idxs for item in train_set_group]
-
-        # 展示不同client上的label分布
-        plt.figure(figsize=(12, 8))
-        label_distribution = [[] for _ in range(10)]
-        for c_id, idc in enumerate(client_idx):
-            for idx in idc:
-                label_distribution[labels[idx]].append(c_id)
-
-        plt.hist(label_distribution, stacked=True,
-                 bins=np.arange(-0.5, self.args.n_client + 1.5, 1),
-                 label=train_set_group[0].dataset.classes, rwidth=0.5)
-        plt.xticks(np.arange(self.args.n_client), ["%d" % c_id for c_id in range(self.args.n_client)])
-        plt.xlabel("Client ID")
-        plt.ylabel("Number of samples")
-        plt.legend()
-        plt.title("Display Label Distribution on Different Clients")
-        plt.show()
+    # def plot_label_distribution(self, train_set_group):
+    #     labels = train_set_group[0].dataset.targets
+    #
+    #     client_idx = [item.idxs for item in train_set_group]
+    #
+    #     # 展示不同client上的label分布
+    #     plt.figure(figsize=(12, 8))
+    #     label_distribution = [[] for _ in range(10)]
+    #     for c_id, idc in enumerate(client_idx):
+    #         for idx in idc:
+    #             label_distribution[labels[idx]].append(c_id)
+    #
+    #     plt.hist(label_distribution, stacked=True,
+    #              bins=np.arange(-0.5, self.args.n_client + 1.5, 1),
+    #              label=train_set_group[0].dataset.classes, rwidth=0.5)
+    #     plt.xticks(np.arange(self.args.n_client), ["%d" % c_id for c_id in range(self.args.n_client)])
+    #     plt.xlabel("Client ID")
+    #     plt.ylabel("Number of samples")
+    #     plt.legend()
+    #     plt.title("Display Label Distribution on Different Clients")
+    #     plt.show()
 
 
 if __name__ == '__main__':
     # 参数设置
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='cifar10')              # 数据集
-    parser.add_argument('--n_round', type=int, default=200)                 # 联邦学习轮数
+    parser.add_argument('--n_round', type=int, default=300)                 # 联邦学习轮数
     parser.add_argument('--n_client', type=int, default=10)                 # 客户端数量
     parser.add_argument('--activate_rate', type=float, default=1.0)         # 激活客户端比例
     parser.add_argument('--n_epoch', type=int, default=1)                   # 客户端训练轮数
