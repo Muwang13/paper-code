@@ -8,20 +8,20 @@ import torch
 from matplotlib import pyplot as plt
 from torch import optim, nn
 from torch.utils.data import DataLoader
-from model import BasicCNN as Model
+from model import BasicCNN as Model, CNN_mnist as CNN
 from model import weight_init
-from dataset import dirichlet_split, plot_label_distribution, get_client_alpha, get_client_beta
-from dirichlet_data import dirichlet_data
+from dataset import dirichlet_split, plot_label_distribution, get_client_alpha, get_client_beta, dirichlet_data
+# from dirichlet_data import dirichlet_data
 
 class FedSystem(object):
     def __init__(self, args):
         self.args = args
-        self.server_model = Model().to(args.device)
-        self.client_model_set = [Model() for _ in range(args.n_client)]
-        # self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client, alpha=args.alpha, num_samples_per_client=3000)
+        self.server_model = CNN().to(args.device)
+        self.client_model_set = [CNN() for _ in range(args.n_client)]
+        # self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client, alpha=args.alpha, num_samples_per_client=1000)
         self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client, alpha=args.alpha)
         # 绘制客户端的数据标签分布
-        plot_label_distribution(args.n_client, self.train_set_group)
+        # plot_label_distribution(args.n_client, self.train_set_group)
         print("客户端数据量：", [len(ts.idxs) for ts in self.train_set_group])
         self.train_loader_group = [DataLoader(train_set, batch_size=args.train_batch_size, shuffle=True) for train_set in self.train_set_group]
         self.test_loader = DataLoader(self.test_set, batch_size=args.test_batch_size, shuffle=True)
@@ -49,6 +49,8 @@ class FedSystem(object):
         # 训练模型
         acc_list, loss_list = [],[]
         max_acc = 0
+        lr = args.lr
+        lr_decay = args.decay  # 0.997
         for r in range(start, args.n_round):
             start_time = time.time()
             round_num = r + 1
@@ -60,8 +62,9 @@ class FedSystem(object):
                 activate_clients = client_idx_list
             alpha_sum = sum([self.client_alpha[idx] for idx in activate_clients])
             local_loss = []
+
             for client_idx in activate_clients:
-                loss = self.client_update(client_idx, round_num, args.lr)
+                loss = self.client_update(client_idx, round_num, lr)
                 local_loss.append(loss)
             loss_list.append(sum(local_loss) / len(local_loss))
 
@@ -84,8 +87,9 @@ class FedSystem(object):
             acc_list.append(acc)
             print(f'******* round = {r + 1} | acc = {round(acc, 4)} | max_acc = {round(max_acc, 4)} *******')
 
+            lr = lr * lr_decay
             # 绘制图像
-            if round_num % 50 ==0:
+            if round_num % 300 == 0:
                 # 准确率图像
                 plt.figure()
                 plt.plot(range(len(acc_list)), acc_list)
@@ -163,21 +167,21 @@ class FedSystem(object):
 if __name__ == '__main__':
     # 参数设置
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='cifar10')              # 数据集
+    parser.add_argument('--data', type=str, default='fashion_mnist')        # 数据集
     parser.add_argument('--n_round', type=int, default=300)                 # 联邦学习轮数
-    parser.add_argument('--n_client', type=int, default=10)                 # 客户端数量
-    parser.add_argument('--activate_rate', type=float, default=1.0)         # 激活客户端比例
+    parser.add_argument('--n_client', type=int, default=50)                 # 客户端数量
+    parser.add_argument('--activate_rate', type=float, default=0.2)         # 激活客户端比例
     parser.add_argument('--n_epoch', type=int, default=1)                   # 客户端训练轮数
-    parser.add_argument('--lr', type=float, default=1e-2)                   # 学习率
-    parser.add_argument('--alpha', type=float, default=1)                   # Dirichlet分布参数（越大，数据异构程度越高）
-    parser.add_argument('--decay', type=float, default=1.0)                 # 学习率衰减
+    parser.add_argument('--lr', type=float, default=0.01)                   # 学习率
+    parser.add_argument('--alpha', type=float, default=0.01)                # Dirichlet分布参数（越大，数据异构程度越高）
+    parser.add_argument('--decay', type=float, default=0.98)                # 学习率衰减
     parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
     parser.add_argument('--csd_importance', type=float, default=0)          # 控制变量损失权重
     parser.add_argument('--eps', type=float, default=1e-5)                  # 表征一个极小数，避免除0
     parser.add_argument('--clip', type=float, default=10)                   # 梯度裁剪
-    parser.add_argument('--train_batch_size', type=int, default=128)        # 客户端训练批次大小
+    parser.add_argument('--train_batch_size', type=int, default=64)         # 客户端训练批次大小
     parser.add_argument('--test_batch_size', type=int, default=128)         # 测试批次大小
-    parser.add_argument('--i_seed', type=int, default=20001)                # 随机种子 1000*: 数据量均匀；2000*: 数据量不均匀
+    parser.add_argument('--i_seed', type=int, default=30005)                # 随机种子 1000*: 数据量均匀；2000*: 数据量不均匀；3000*: 学习率衰减
     args = parser.parse_args()
 
     # 训练设备
@@ -185,7 +189,7 @@ if __name__ == '__main__':
     args.device = torch.device('cuda') if cuda else torch.device('cpu')
     print('device: ', args.device)
 
-    print(f"n_round {args.n_round}, n_client {args.n_client}, activate rate {args.activate_rate}, n_epoch {args.n_epoch}, "
+    print(f"data {args.data}, n_round {args.n_round}, n_client {args.n_client}, activate rate {args.activate_rate}, n_epoch {args.n_epoch}, "
           f"lr {args.lr}, alpha {args.alpha}, batch_size {args.train_batch_size}, pruing_p {args.pruing_p}, "
           f"csd_importance {args.csd_importance}, seed {args.i_seed}, decay {args.decay}")
 
@@ -195,4 +199,4 @@ if __name__ == '__main__':
     random.seed(args.i_seed)
 
     fed_sys = FedSystem(args)
-    acc_list = fed_sys.server_excute()
+    fed_sys.server_excute()
