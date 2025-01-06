@@ -34,7 +34,7 @@ def dirichlet_split(data_name, num_users=10, alpha=100, num_samples_per_client=1
                        transforms.ToTensor(),
                        transforms.Normalize((0.1307,), (0.3081,))
                    ]))
-    elif data_name == 'fashion_mnist':
+    elif data_name == 'fmnist':
         dataset = datasets.FashionMNIST('./data/', train=True, download=True,
                    transform=transforms.Compose([
                        transforms.ToTensor(),
@@ -179,7 +179,7 @@ def dirichlet_data(data_name, num_users=10, alpha = 100):
                        transforms.ToTensor(),
                        transforms.Normalize((0.1307,), (0.3081,))
                    ]))
-    elif data_name == 'fashion_mnist':
+    elif data_name == 'fmnist':
         dataset = datasets.FashionMNIST('./data/', train=True, download=True,
                    transform=transforms.Compose([
                        transforms.ToTensor(),

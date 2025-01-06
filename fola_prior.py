@@ -109,30 +109,35 @@ class FedSystem(object):
                 plt.plot(range(len(acc_list)), acc_list)
                 plt.ylabel('Accuracy')
                 plt.xlabel('epoch')
-                plt.savefig('results/fola_prior/figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.png'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                plt.savefig('results/fola_prior/figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
+                        args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,
+                        args.n_epoch, args.weight, args.i_seed))
 
                 # 损失图像
                 plt.figure()
                 plt.plot(range(len(loss_list)), loss_list)
                 plt.ylabel('Loss')
                 plt.xlabel('epoch')
-                plt.savefig('results/fola_prior/figures/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.png'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                plt.savefig('results/fola_prior/figures/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
+                        args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,
+                        args.n_epoch, args.weight, args.i_seed))
 
                 # 保存准确率数据
                 df1 = pd.DataFrame(acc_list, columns=['accuracy'])
-                df1.to_excel('results/fola_prior/data/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.xlsx'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                df1.to_excel('results/fola_prior/data/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
+                        args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,
+                        args.n_epoch, args.weight, args.i_seed))
 
                 # 保存损失数据
                 df2 = pd.DataFrame(loss_list, columns=['loss'])
-                df2.to_excel('results/fola_prior/data/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.xlsx'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                df2.to_excel('results/fola_prior/data/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
+                        args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,
+                        args.n_epoch, args.weight, args.i_seed))
 
                 # 保存模型
-                torch.save(self.server_model,'results/fola_prior/models/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.pt'.format(
-                     args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                torch.save(self.server_model, 'results/fola_prior/models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
+                               args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,
+                               args.n_epoch, args.weight, args.i_seed))
 
                 print("save data successfully!")
             end_time = time.time()
@@ -210,7 +215,7 @@ class FedSystem(object):
 if __name__ == '__main__':
     # 参数设置
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='fashion_mnist')        # 数据集
+    parser.add_argument('--data', type=str, default='fmnist')               # 数据集
     parser.add_argument('--n_round', type=int, default=300)                 # 联邦学习轮数
     parser.add_argument('--n_client', type=int, default=50)                 # 客户端数量
     parser.add_argument('--activate_rate', type=float, default=0.2)         # 激活客户端比例
@@ -224,8 +229,8 @@ if __name__ == '__main__':
     parser.add_argument('--clip', type=float, default=10)                   # 梯度裁剪
     parser.add_argument('--train_batch_size', type=int, default=64)         # 客户端训练批次大小
     parser.add_argument('--test_batch_size', type=int, default=128)         # 测试批次大小
-    parser.add_argument('--i_seed', type=int, default=1001)                # 随机种子
-    parser.add_argument('--weight', type=int, default=0, help='1: datasize, 0: datasize_entropy')                    # 聚合权重
+    parser.add_argument('--i_seed', type=int, default=1001)                 # 随机种子
+    parser.add_argument('--weight', type=int, default=0, help='1: datasize, 0: datasize_entropy')      # 聚合权重
     args = parser.parse_args()
 
     # 训练设备
