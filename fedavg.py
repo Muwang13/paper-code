@@ -26,8 +26,12 @@ class FedSystem(object):
         self.train_loader_group = [DataLoader(train_set, batch_size=args.train_batch_size, shuffle=True) for train_set in self.train_set_group]
         self.test_loader = DataLoader(self.test_set, batch_size=args.test_batch_size, shuffle=True)
         # 设置模型聚合权重
-        self.client_alpha = get_client_alpha(self.train_set_group)
-        # self.client_alpha = get_client_beta(self.train_set_group)
+        if args.weight == 1:
+            print('基于数据量设置聚合权重')
+            self.client_alpha = get_client_alpha(self.train_set_group)
+        elif args.weight == 0:
+            print('基于数据量和信息熵设置聚合权重')
+            self.client_alpha = get_client_beta(self.train_set_group)
         print("聚合权重：", self.client_alpha)
         self.criterion = nn.CrossEntropyLoss()
 
@@ -83,7 +87,7 @@ class FedSystem(object):
                         self.client_model_set[client_idx].state_dict()[name].data.copy_(new_param[name].cpu())
 
             acc = self.test_server_model()
-            max_acc = acc if acc>max_acc else max_acc
+            max_acc = max(max_acc, acc)
             acc_list.append(acc)
             print(f'******* round = {r + 1} | acc = {round(acc, 4)} | max_acc = {round(max_acc, 4)} *******')
 
@@ -95,30 +99,30 @@ class FedSystem(object):
                 plt.plot(range(len(acc_list)), acc_list)
                 plt.ylabel('Accuracy')
                 plt.xlabel('epoch')
-                plt.savefig('results/fedavg/figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.png'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                plt.savefig('results/fedavg/figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
+                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay, args.n_epoch, args.weight, args.i_seed))
 
                 # 损失图像
                 plt.figure()
                 plt.plot(range(len(loss_list)), loss_list)
                 plt.ylabel('Loss')
                 plt.xlabel('epoch')
-                plt.savefig('results/fedavg/figures/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.png'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                plt.savefig('results/fedavg/figures/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
+                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,  args.n_epoch, args.weight, args.i_seed))
 
                 # 保存准确率数据
                 df1 = pd.DataFrame(acc_list, columns=['accuracy'])
-                df1.to_excel('results/fedavg/data/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.xlsx'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                df1.to_excel('results/fedavg/data/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
+                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,  args.n_epoch, args.weight, args.i_seed))
 
                 # 保存损失数据
                 df2 = pd.DataFrame(loss_list, columns=['loss'])
-                df2.to_excel('results/fedavg/data/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.xlsx'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                df2.to_excel('results/fedavg/data/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
+                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,  args.n_epoch, args.weight, args.i_seed))
 
                 # 保存模型
-                torch.save(self.server_model,'results/fedavg/models/users_{}_data_{}_C{}_alpha_{}_round_{}_seed_{}.pt'.format(
-                     args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.i_seed))
+                torch.save(self.server_model,'results/fedavg/models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
+                     args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,  args.n_epoch, args.weight, args.i_seed))
 
                 print("save data successfully!")
             end_time = time.time()
@@ -171,9 +175,9 @@ if __name__ == '__main__':
     parser.add_argument('--n_round', type=int, default=300)                 # 联邦学习轮数
     parser.add_argument('--n_client', type=int, default=50)                 # 客户端数量
     parser.add_argument('--activate_rate', type=float, default=0.2)         # 激活客户端比例
-    parser.add_argument('--n_epoch', type=int, default=1)                   # 客户端训练轮数
-    parser.add_argument('--lr', type=float, default=0.01)                   # 学习率
-    parser.add_argument('--alpha', type=float, default=0.01)                # Dirichlet分布参数（越大，数据异构程度越高）
+    parser.add_argument('--n_epoch', type=int, default=5)                   # 客户端训练轮数
+    parser.add_argument('--lr', type=float, default=0.05)                   # 学习率
+    parser.add_argument('--alpha', type=float, default=0.1)                 # Dirichlet分布参数（越大，数据异构程度越高）
     parser.add_argument('--decay', type=float, default=0.98)                # 学习率衰减
     parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
     parser.add_argument('--csd_importance', type=float, default=0)          # 控制变量损失权重
@@ -181,7 +185,8 @@ if __name__ == '__main__':
     parser.add_argument('--clip', type=float, default=10)                   # 梯度裁剪
     parser.add_argument('--train_batch_size', type=int, default=64)         # 客户端训练批次大小
     parser.add_argument('--test_batch_size', type=int, default=128)         # 测试批次大小
-    parser.add_argument('--i_seed', type=int, default=30005)                # 随机种子 1000*: 数据量均匀；2000*: 数据量不均匀；3000*: 学习率衰减
+    parser.add_argument('--i_seed', type=int, default=1001)                # 随机种子 1000*: 数据量均匀；2000*: 数据量不均匀；3000*: 学习率衰减
+    parser.add_argument('--weight', type=int, default=1, help='1: datasize, 0: datasize_entropy')                    # 聚合权重，
     args = parser.parse_args()
 
     # 训练设备
