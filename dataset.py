@@ -161,7 +161,8 @@ def get_entropy(list):
     for p in list:
         entropy -= p * math.log(p, 2)
 
-    # entropy = pow(2,entropy)
+    # 可能还是需要的
+    entropy = pow(2,entropy)
 
     return entropy
 

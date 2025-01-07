@@ -16,8 +16,8 @@ from dataset import dirichlet_split, plot_label_distribution, get_client_alpha, 
 class FedSystem(object):
     def __init__(self, args):
         self.args = args
-        self.server_model = CNN().to(args.device)
-        self.client_model_set = [CNN() for _ in range(args.n_client)]
+        self.server_model = Model().to(args.device)
+        self.client_model_set = [Model() for _ in range(args.n_client)]
         # self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client, alpha=args.alpha, num_samples_per_client=1000)
         self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client, alpha=args.alpha)
         # 绘制客户端的数据标签分布
@@ -93,7 +93,7 @@ class FedSystem(object):
 
             lr = lr * lr_decay
             # 绘制图像
-            if round_num % 50 == 0:
+            if round_num % 100 == 0:
                 # 准确率图像
                 plt.figure()
                 plt.plot(range(len(acc_list)), acc_list)
@@ -101,7 +101,6 @@ class FedSystem(object):
                 plt.xlabel('epoch')
                 plt.savefig('results/fedavg/figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
                     args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay, args.n_epoch, args.weight, args.i_seed))
-                plt.show()
 
                 # 损失图像
                 plt.figure()
@@ -110,7 +109,6 @@ class FedSystem(object):
                 plt.xlabel('epoch')
                 plt.savefig('results/fedavg/figures/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
                     args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,  args.n_epoch, args.weight, args.i_seed))
-                plt.show()
 
                 if round_num % 300 == 0:
                     # 保存准确率数据
@@ -174,13 +172,13 @@ class FedSystem(object):
 if __name__ == '__main__':
     # 参数设置
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='mnist')                # 数据集
+    parser.add_argument('--data', type=str, default='cifar10')              # 数据集
     parser.add_argument('--n_round', type=int, default=300)                 # 联邦学习轮数
-    parser.add_argument('--n_client', type=int, default=100)                 # 客户端数量
+    parser.add_argument('--n_client', type=int, default=50)                 # 客户端数量
     parser.add_argument('--activate_rate', type=float, default=0.2)         # 激活客户端比例
     parser.add_argument('--n_epoch', type=int, default=1)                   # 客户端训练轮数
-    parser.add_argument('--lr', type=float, default=0.01)                   # 学习率
-    parser.add_argument('--alpha', type=float, default=100)                # Dirichlet分布参数（越大，数据异构程度越高）
+    parser.add_argument('--lr', type=float, default=0.1)                    # 学习率
+    parser.add_argument('--alpha', type=float, default=1)                   # Dirichlet分布参数（越大，数据异构程度越高）
     parser.add_argument('--decay', type=float, default=1)                   # 学习率衰减
     parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
     parser.add_argument('--csd_importance', type=float, default=0)          # 控制变量损失权重
