@@ -12,6 +12,8 @@ from torch.utils.data import DataLoader
 from model import BasicCNN as Model, CNN_mnist as CNN
 from model import weight_init
 from dataset import dirichlet_split, plot_label_distribution, get_client_alpha, get_client_beta, dirichlet_data
+import torch.distributions as D
+import torch.nn.functional as F
 
 class FedSystem(object):
     def __init__(self, args):
@@ -37,6 +39,20 @@ class FedSystem(object):
         print("聚合权重：", self.client_alpha)
         self.criterion = nn.CrossEntropyLoss()
 
+        # 模型聚合权重设计：基于局部后验分布的协方差的迹以及局部后验和全局后验的KL散度
+        # self.client_tr_set = [sum([sum(param) for param in d.values()]) for d in self.client_omega_set]
+        # self.server_mu_param = torch.stack([param for _, param in self.server_model.named_parameters()])
+        # self.server_omega_param = torch.stack([param for param in self.server_omega.values()])
+        # self.server_dist = D.Normal(self.server_mu_param, F.softplus(1/(self.server_omega_param+args.eps)))
+        # self.client_kl_set = [self.cal_kl(idx) for idx in range(args.n_client)]
+        # self.server_mu_param = torch.empty()
+        # self.server_omage_param = torch.empty()
+        self.server_dist = None
+        self.client_kl_set = [0] * args.n_client
+        self.client_tr_set = [0] * args.n_client
+        self.client_norm_set = [0] * args.n_client
+        self.weight = None
+
     def server_excute(self):
         start = 0
         device = self.args.device
@@ -55,6 +71,11 @@ class FedSystem(object):
         client_idx_list = [i for i in range(args.n_client)]
         activate_client_num = int(args.activate_rate * args.n_client)
         assert activate_client_num > 1
+
+        # 初始化全局分布
+        mu = torch.cat([param.flatten() for _, param in self.server_model.named_parameters()], dim=0)
+        omega = torch.cat([param.flatten() for param in self.server_omega.values()], dim=0)
+        self.server_dist = D.Normal(mu, F.softplus(1 / (omega + args.eps)))
 
         # 训练模型
         acc_list, loss_list = [],[]
@@ -79,14 +100,21 @@ class FedSystem(object):
 
             new_param = {}
             new_omega = {}
+
+            # 基于局部后验协方差和kl散度计算聚合权重
+            self.weight = self.get_weight()
+
             with torch.no_grad():
                 for name, param in self.server_model.named_parameters():
                     new_param[name] = param.data.zero_()
                     new_omega[name] = self.server_omega[name].data.zero_()
                     for client_idx in activate_clients:
-                        new_param[name] += (self.client_alpha[client_idx]/alpha_sum) * self.client_omega_set[client_idx][name] * \
+                        # new_param[name] += (self.client_alpha[client_idx]/alpha_sum) * self.client_omega_set[client_idx][name] * \
+                        #                    self.client_model_set[client_idx].state_dict()[name].to(device)
+                        # new_omega[name] += (self.client_alpha[client_idx]/alpha_sum) * self.client_omega_set[client_idx][name]
+                        new_param[name] += self.weight[client_idx] * self.client_omega_set[client_idx][name] * \
                                            self.client_model_set[client_idx].state_dict()[name].to(device)
-                        new_omega[name] += (self.client_alpha[client_idx]/alpha_sum) * self.client_omega_set[client_idx][name]
+                        new_omega[name] += self.weight[client_idx] * self.client_omega_set[client_idx][name]
                     new_param[name] /= (new_omega[name] + args.eps)
 
                 # for name, param in self.server_model.named_parameters():
@@ -95,6 +123,11 @@ class FedSystem(object):
                     for client_idx in range(args.n_client):
                         self.client_model_set[client_idx].state_dict()[name].data.copy_(new_param[name].cpu())
                         self.client_omega_set[client_idx][name].data.copy_(new_omega[name])
+
+            # 更新全局后验分布
+            server_mu_param = torch.cat([param.flatten() for _, param in self.server_model.named_parameters()], dim=0)
+            server_omega_param = torch.cat([param for param in self.server_omega.values()], dim=0)
+            self.server_dist = D.Normal(server_mu_param, F.softplus(1 / (server_omega_param + args.eps)))
 
             acc = self.test_server_model()
             max_acc = max(max_acc, acc)
@@ -197,6 +230,12 @@ class FedSystem(object):
         log_csd_loss /= (args.n_epoch / args.csd_importance) if args.csd_importance > 0 else 1
         print(f'client_idx = {client_idx + 1} | loss = {log_ce_loss + log_csd_loss} (ce: {log_ce_loss} + csd: {log_csd_loss})')
         self.client_model_set[client_idx] = self.client_model_set[client_idx].cpu()
+
+        # 更新协方差的迹和kl散度
+        self.client_tr_set[client_idx] = sum([torch.sum(param) for param in self.client_omega_set[client_idx].values()])
+        self.client_kl_set[client_idx] = self.cal_kl(client_idx)
+        self.client_norm_set[client_idx] = self.cal_norm(client_idx)
+
         return log_ce_loss + log_csd_loss
 
     def test_server_model(self):
@@ -212,6 +251,25 @@ class FedSystem(object):
             n_test += data.size(0)
         return correct / n_test
 
+    def cal_kl(self, idx):
+        mu = torch.cat([param.flatten() for _, param in self.client_model_set[idx].named_parameters()], dim=0).to(self.args.device)
+        omega = torch.cat([param.flatten() for param in self.client_omega_set[idx].values()], dim=0).to(self.args.device)
+        dist = D.Normal(mu, F.softplus(1/(omega+self.args.eps)))
+        kl = D.kl_divergence(dist, self.server_dist).sum()
+        return kl
+
+    def cal_norm(self, idx):
+        mu = torch.cat([param.flatten() for _, param in self.client_model_set[idx].named_parameters()], dim=0).to(self.args.device)
+        server_mu = torch.cat([param.flatten() for _, param in self.server_model.named_parameters()], dim=0)
+        norm = torch.sum((mu-server_mu)**2)
+        return norm
+
+    def get_weight(self):
+        weight = [i/j for i, j in zip(self.client_tr_set, self.client_kl_set)]
+        total = sum(weight)
+        weight_norm = [i/total for i in weight]
+        return weight
+
 if __name__ == '__main__':
     # 参数设置
     parser = argparse.ArgumentParser()
@@ -222,7 +280,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_epoch', type=int, default=5)                   # 客户端训练轮数
     parser.add_argument('--lr', type=float, default=0.05)                   # 学习率
     parser.add_argument('--alpha', type=float, default=0.1)                 # Dirichlet分布参数
-    parser.add_argument('--decay', type=float, default=0.98)                # 学习率衰减
+    parser.add_argument('--decay', type=float, default=1)                # 学习率衰减
     parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
     parser.add_argument('--csd_importance', type=float, default=0)          # 控制变量损失权重
     parser.add_argument('--eps', type=float, default=1e-5)                  # 表征一个极小数，避免除0

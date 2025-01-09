@@ -13,6 +13,7 @@ from model import BasicCNN as Model, CNN_mnist as CNN
 from model import weight_init
 from dataset import dirichlet_split, plot_label_distribution, get_client_alpha, get_client_beta, dirichlet_data
 
+
 class FedSystem(object):
     def __init__(self, args):
         self.args = args
@@ -55,7 +56,6 @@ class FedSystem(object):
         client_idx_list = [i for i in range(args.n_client)]
         activate_client_num = int(args.activate_rate * args.n_client)
         assert activate_client_num > 1
-
         # 训练模型
         acc_list, loss_list = [],[]
         max_acc = 0
@@ -197,6 +197,7 @@ class FedSystem(object):
         log_csd_loss /= (args.n_epoch / args.csd_importance) if args.csd_importance > 0 else 1
         print(f'client_idx = {client_idx + 1} | loss = {log_ce_loss + log_csd_loss} (ce: {log_ce_loss} + csd: {log_csd_loss})')
         self.client_model_set[client_idx] = self.client_model_set[client_idx].cpu()
+
         return log_ce_loss + log_csd_loss
 
     def test_server_model(self):
@@ -215,21 +216,21 @@ class FedSystem(object):
 if __name__ == '__main__':
     # 参数设置
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='mnist')        # 数据集
-    parser.add_argument('--n_round', type=int, default=300)                 # 联邦学习轮数
-    parser.add_argument('--n_client', type=int, default=20)                 # 客户端数量
-    parser.add_argument('--activate_rate', type=float, default=0.5)         # 激活客户端比例
-    parser.add_argument('--n_epoch', type=int, default=1)                   # 客户端训练轮数
-    parser.add_argument('--lr', type=float, default=0.1)                   # 学习率
-    parser.add_argument('--alpha', type=float, default=0.01)                 # Dirichlet分布参数
-    parser.add_argument('--decay', type=float, default=1)                # 学习率衰减
-    parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
-    parser.add_argument('--csd_importance', type=float, default=0)          # 控制变量损失权重
-    parser.add_argument('--eps', type=float, default=1e-5)                  # 表征一个极小数，避免除0
-    parser.add_argument('--clip', type=float, default=10)                   # 梯度裁剪
-    parser.add_argument('--train_batch_size', type=int, default=32)         # 客户端训练批次大小
-    parser.add_argument('--test_batch_size', type=int, default=64)         # 测试批次大小
-    parser.add_argument('--i_seed', type=int, default=20001)                # 随机种子
+    parser.add_argument('--data', type=str, default='mnist')                                                         # 数据集
+    parser.add_argument('--n_round', type=int, default=300)                                                          # 联邦学习轮数
+    parser.add_argument('--n_client', type=int, default=20)                                                          # 客户端数量
+    parser.add_argument('--activate_rate', type=float, default=0.5)                                                  # 激活客户端比例
+    parser.add_argument('--n_epoch', type=int, default=1)                                                            # 客户端训练轮数
+    parser.add_argument('--lr', type=float, default=0.1)                                                             # 学习率
+    parser.add_argument('--alpha', type=float, default=0.01)                                                         # Dirichlet分布参数
+    parser.add_argument('--decay', type=float, default=1)                                                            # 学习率衰减
+    parser.add_argument('--pruing_p', type=float, default=0)                                                         # 剪枝比例
+    parser.add_argument('--csd_importance', type=float, default=0)                                                   # 控制变量损失权重
+    parser.add_argument('--eps', type=float, default=1e-5)                                                           # 表征一个极小数，避免除0
+    parser.add_argument('--clip', type=float, default=10)                                                            # 梯度裁剪
+    parser.add_argument('--train_batch_size', type=int, default=32)                                                  # 客户端训练批次大小
+    parser.add_argument('--test_batch_size', type=int, default=64)                                                   # 测试批次大小
+    parser.add_argument('--i_seed', type=int, default=20001)                                                         # 随机种子
     parser.add_argument('--weight', type=int, default=0, help='1: datasize, 0: datasize_entropy')                    # 聚合权重，
     args = parser.parse_args()
 
