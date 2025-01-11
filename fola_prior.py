@@ -18,14 +18,24 @@ import torch.nn.functional as F
 class FedSystem(object):
     def __init__(self, args):
         self.args = args
-        self.server_model = CNN().to(args.device)
-        self.client_model_set = [CNN() for _ in range(args.n_client)]
+        # 如果是mnist或者fmnist数据集，使用CNN模型
+        if args.data == 'mnist' or args.data == 'fmnist':
+            self.server_model = CNN().to(args.device)
+            self.client_model_set = [CNN() for _ in range(args.n_client)]
+        else:
+            # 否则使用BasicCNN模型
+            self.server_model = Model().to(args.device)
+            self.client_model_set = [Model() for _ in range(args.n_client)]
         self.server_omega = dict()
         self.client_omega_set = [dict() for _ in range(args.n_client)]
-        # self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client, alpha=args.alpha, num_samples_per_client=1000)
-        self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client, alpha=args.alpha)
+        # 划分数据集：数据量均匀/非均匀划分
+        if args.split:
+            self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client, alpha=args.alpha, num_samples_per_client=1000)
+        else:
+            self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client, alpha=args.alpha)
         # 绘制客户端的数据标签分布
-        # plot_label_distribution(args.n_client, self.train_set_group)
+        if args.label_verbose:
+            plot_label_distribution(args.n_client, self.train_set_group)
         print("客户端数据量：", [len(ts.idxs) for ts in self.train_set_group])
         self.train_loader_group = [DataLoader(train_set, batch_size=args.train_batch_size, shuffle=True) for train_set in self.train_set_group]
         self.test_loader = DataLoader(self.test_set, batch_size=args.test_batch_size, shuffle=True)
@@ -37,22 +47,16 @@ class FedSystem(object):
             print('基于数据量和信息熵设置聚合权重')
             self.client_alpha = get_client_beta(self.train_set_group)
         print("聚合权重：", self.client_alpha)
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss()          # 损失函数
 
-        # 模型聚合权重设计：基于局部后验分布的协方差的迹以及局部后验和全局后验的KL散度
-        # self.client_tr_set = [sum([sum(param) for param in d.values()]) for d in self.client_omega_set]
-        # self.server_mu_param = torch.stack([param for _, param in self.server_model.named_parameters()])
-        # self.server_omega_param = torch.stack([param for param in self.server_omega.values()])
-        # self.server_dist = D.Normal(self.server_mu_param, F.softplus(1/(self.server_omega_param+args.eps)))
-        # self.client_kl_set = [self.cal_kl(idx) for idx in range(args.n_client)]
-        # self.server_mu_param = torch.empty()
-        # self.server_omage_param = torch.empty()
-        self.server_dist = None
-        self.client_kl_set = [0] * args.n_client
-        self.client_tr_set = [0] * args.n_client
-        self.client_norm_set = [0] * args.n_client
-        self.weight = None
+        # 基于协方差和kl散度设置模型聚合权重
+        self.server_dist = None                         # 全局模型后验分布
+        self.client_kl_set = [0] * args.n_client        # 局部后验和全局后验的KL散度
+        self.client_tr_set = [0] * args.n_client        # 局部后验的协方差矩阵逆的迹
+        self.client_norm_set = [0] * args.n_client      # 局部模型和全局模型的差的二范数的平方
+        self.weight = None                              # 模型聚合权重
 
+    @property
     def server_excute(self):
         start = 0
         device = self.args.device
@@ -72,49 +76,58 @@ class FedSystem(object):
         activate_client_num = int(args.activate_rate * args.n_client)
         assert activate_client_num > 1
 
-        # 初始化全局分布
-        mu = torch.cat([param.flatten() for _, param in self.server_model.named_parameters()], dim=0)
-        omega = torch.cat([param.flatten() for param in self.server_omega.values()], dim=0)
-        self.server_dist = D.Normal(mu, F.softplus(1 / (omega + args.eps)))
+        # 初始化全局后验分布
+        self.server_update()
 
         # 训练模型
         acc_list, loss_list = [],[]
         max_acc = 0
-        lr = args.lr
-        lr_decay = args.decay
+        # 设置学习率衰减策略
+        # lr = args.lr
+        # lr_decay = args.decay
         for r in range(start, args.n_round):
             start_time = time.time()
             round_num = r + 1
             print('round_num -- ', round_num)
 
-            if args.activate_rate<1:
-                activate_clients = random.sample(client_idx_list, activate_client_num)
-            else:
-                activate_clients = client_idx_list
-            alpha_sum = sum([self.client_alpha[idx] for idx in activate_clients])
             local_loss = []
-            for client_idx in activate_clients:
-                loss = self.client_update(client_idx, round_num, lr)
+            # 全部客户端进行训练
+            for client_idx in client_idx_list:
+                loss = self.client_update(client_idx, round_num, args.lr)
                 local_loss.append(loss)
-            loss_list.append(sum(local_loss) / len(local_loss))
-
-            new_param = {}
-            new_omega = {}
-
-            # 基于局部后验协方差和kl散度计算聚合权重
             self.weight = self.get_weight()
 
+            # 激活部分客户端进行模型聚合（设备选择）
+            if args.activate_rate<1:
+                # 根据局部后验协方差的迹和kl散度选择激活客户端
+                client_weight = list(enumerate(self.weight))
+                client_weight.sort(key=lambda x: x[1], reverse=True)
+                activate_clients = [item[0] for item in client_weight[:activate_client_num]]
+            else:
+                activate_clients = client_idx_list
+            print('activate_clients:', activate_clients)
+            alpha_sum = sum([self.client_alpha[idx] for idx in activate_clients])
+
+            local_loss_selected = [local_loss[idx] for idx in activate_clients]
+            loss_list.append(sum(local_loss_selected) / len(local_loss_selected))
+            # lr = lr * lr_decay # 更新学习率
+
+            # 模型聚合
+            new_param = {}
+            new_omega = {}
             with torch.no_grad():
                 for name, param in self.server_model.named_parameters():
                     new_param[name] = param.data.zero_()
                     new_omega[name] = self.server_omega[name].data.zero_()
                     for client_idx in activate_clients:
-                        # new_param[name] += (self.client_alpha[client_idx]/alpha_sum) * self.client_omega_set[client_idx][name] * \
-                        #                    self.client_model_set[client_idx].state_dict()[name].to(device)
-                        # new_omega[name] += (self.client_alpha[client_idx]/alpha_sum) * self.client_omega_set[client_idx][name]
-                        new_param[name] += self.weight[client_idx] * self.client_omega_set[client_idx][name] * \
+                        new_param[name] += (self.client_alpha[client_idx]/alpha_sum) * self.client_omega_set[client_idx][name] * \
                                            self.client_model_set[client_idx].state_dict()[name].to(device)
-                        new_omega[name] += self.weight[client_idx] * self.client_omega_set[client_idx][name]
+                        new_omega[name] += (self.client_alpha[client_idx]/alpha_sum) * self.client_omega_set[client_idx][name]
+
+                        # todo 基于局部后验协方差的迹与kl散度设置模型聚合权重
+                        # new_param[name] += self.weight[client_idx] * self.client_omega_set[client_idx][name] * \
+                        #                    self.client_model_set[client_idx].state_dict()[name].to(device)
+                        # new_omega[name] += self.weight[client_idx] * self.client_omega_set[client_idx][name]
                     new_param[name] /= (new_omega[name] + args.eps)
 
                 # for name, param in self.server_model.named_parameters():
@@ -125,18 +138,17 @@ class FedSystem(object):
                         self.client_omega_set[client_idx][name].data.copy_(new_omega[name])
 
             # 更新全局后验分布
-            server_mu_param = torch.cat([param.flatten() for _, param in self.server_model.named_parameters()], dim=0)
-            server_omega_param = torch.cat([param for param in self.server_omega.values()], dim=0)
-            self.server_dist = D.Normal(server_mu_param, F.softplus(1 / (server_omega_param + args.eps)))
+            self.server_update()
 
             acc = self.test_server_model()
             max_acc = max(max_acc, acc)
             acc_list.append(acc)
             print(f'******* round = {r + 1} | acc = {round(acc, 4)} | max_acc = {round(max_acc, 4)} *******')
 
-            lr = lr * lr_decay
+            end_time = time.time()
+            print('---epoch time: %s seconds ---' % round((end_time - start_time), 2))
             # 绘制图像
-            if round_num % 300 == 0:
+            if round_num % 100 == 0:
                 # 准确率图像
                 plt.figure()
                 plt.plot(range(len(acc_list)), acc_list)
@@ -155,27 +167,11 @@ class FedSystem(object):
                         args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,
                         args.n_epoch, args.weight, args.i_seed))
 
-                # 保存准确率数据
-                df1 = pd.DataFrame(acc_list, columns=['accuracy'])
-                df1.to_excel('results/fola_prior/data/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
-                        args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,
-                        args.n_epoch, args.weight, args.i_seed))
-
-                # 保存损失数据
-                df2 = pd.DataFrame(loss_list, columns=['loss'])
-                df2.to_excel('results/fola_prior/data/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
-                        args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,
-                        args.n_epoch, args.weight, args.i_seed))
-
-                # 保存模型
-                torch.save(self.server_model, 'results/fola_prior/models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
-                               args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,
-                               args.n_epoch, args.weight, args.i_seed))
-
-                print("save data successfully!")
-            end_time = time.time()
-            print('---epoch time: %s seconds ---' % round((end_time - start_time), 2))
-        # return acc_list
+        # 保存模型
+        torch.save(self.server_model,'results/fola_prior/models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
+                       args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.decay,
+                       args.n_epoch, args.weight, args.i_seed))
+        return acc_list, loss_list
 
     def get_csd_loss(self, client_idx, mu, omega, round_num):
         loss_set = []
@@ -265,30 +261,39 @@ class FedSystem(object):
         return norm
 
     def get_weight(self):
-        weight = [i/j for i, j in zip(self.client_tr_set, self.client_kl_set)]
+        weight = [i/(j+self.args.eps) for i, j in zip(self.client_tr_set, self.client_kl_set)]
         total = sum(weight)
-        weight_norm = [i/total for i in weight]
-        return weight
+        weight_norm = [(i/total).item() for i in weight]
+        return weight_norm
+
+    def server_update(self):
+        # 初始化全局分布
+        mu = torch.cat([param.flatten() for _, param in self.server_model.named_parameters()], dim=0)
+        omega = torch.cat([param.flatten() for param in self.server_omega.values()], dim=0)
+        self.server_dist = D.Normal(mu, F.softplus(1 / (omega + args.eps)).clamp_max(100))  # todo 限制标准差最大为100（是否合适）
+
 
 if __name__ == '__main__':
     # 参数设置
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='fmnist')               # 数据集
-    parser.add_argument('--n_round', type=int, default=300)                 # 联邦学习轮数
-    parser.add_argument('--n_client', type=int, default=50)                 # 客户端数量
-    parser.add_argument('--activate_rate', type=float, default=0.2)         # 激活客户端比例
-    parser.add_argument('--n_epoch', type=int, default=5)                   # 客户端训练轮数
-    parser.add_argument('--lr', type=float, default=0.05)                   # 学习率
-    parser.add_argument('--alpha', type=float, default=0.1)                 # Dirichlet分布参数
-    parser.add_argument('--decay', type=float, default=1)                # 学习率衰减
-    parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
-    parser.add_argument('--csd_importance', type=float, default=0)          # 控制变量损失权重
-    parser.add_argument('--eps', type=float, default=1e-5)                  # 表征一个极小数，避免除0
-    parser.add_argument('--clip', type=float, default=10)                   # 梯度裁剪
-    parser.add_argument('--train_batch_size', type=int, default=64)         # 客户端训练批次大小
-    parser.add_argument('--test_batch_size', type=int, default=128)         # 测试批次大小
-    parser.add_argument('--i_seed', type=int, default=1001)                 # 随机种子
-    parser.add_argument('--weight', type=int, default=0, help='1: datasize, 0: datasize_entropy')      # 聚合权重
+    parser.add_argument('--data', type=str, default='mnist')                                            # 数据集
+    parser.add_argument('--n_round', type=int, default=300)                                             # 联邦学习轮数
+    parser.add_argument('--n_client', type=int, default=10)                                             # 客户端数量
+    parser.add_argument('--activate_rate', type=float, default=0.2)                                     # 激活客户端比例
+    parser.add_argument('--n_epoch', type=int, default=1)                                               # 客户端训练轮数
+    parser.add_argument('--lr', type=float, default=0.1)                                                # 学习率
+    parser.add_argument('--alpha', type=float, default=0.1)                                             # Dirichlet分布参数
+    parser.add_argument('--decay', type=float, default=1)                                               # 学习率衰减
+    parser.add_argument('--pruing_p', type=float, default=0)                                            # 剪枝比例
+    parser.add_argument('--csd_importance', type=float, default=0)                                      # 控制变量损失权重
+    parser.add_argument('--eps', type=float, default=1e-5)                                              # 表征一个极小数，避免除0
+    parser.add_argument('--clip', type=float, default=10)                                               # 梯度裁剪
+    parser.add_argument('--train_batch_size', type=int, default=32)                                     # 客户端训练批次大小
+    parser.add_argument('--test_batch_size', type=int, default=64)                                      # 测试批次大小
+    parser.add_argument('--i_seed', type=int, default=10001)                                            # 随机种子
+    parser.add_argument('--weight', type=int, default=1, help='1: datasize, 0: datasize_entropy')       # 聚合权重
+    parser.add_argument('--split', type=bool, default=True, help='True：均匀划分，False：非均匀划分')       # 数据集划分方式
+    parser.add_argument('--label_verbose', type=bool, default=False, help='是否绘制标签分布')              # 数据集划分方式
     args = parser.parse_args()
 
     # 训练设备
@@ -306,4 +311,16 @@ if __name__ == '__main__':
     random.seed(args.i_seed)
 
     fed_sys = FedSystem(args)
-    fed_sys.server_excute()
+    acc_list, loss_list = fed_sys.server_excute
+
+    # 保存准确率数据
+    df1 = pd.DataFrame(acc_list, columns=['accuracy'])
+    df1.to_excel('results/fola_prior/data/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
+            args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.decay, args.n_epoch, args.weight, args.i_seed))
+
+    # 保存损失数据
+    df2 = pd.DataFrame(loss_list, columns=['loss'])
+    df2.to_excel('results/fola_prior/data/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
+            args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.decay, args.n_epoch, args.weight, args.i_seed))
+
+    print("save data successfully!")
