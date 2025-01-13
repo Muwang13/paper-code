@@ -12,6 +12,7 @@ from model import BasicCNN as Model, CNN_mnist as CNN
 from model import weight_init
 from dataset import dirichlet_split, plot_label_distribution, get_client_alpha, get_client_beta, dirichlet_data
 from utils.options import args_parser
+from utils.save import save_data, save_fig
 from utils.set_seed import set_seed
 
 
@@ -113,10 +114,10 @@ class FedSystem(object):
             print('---epoch time: %s seconds ---' % round((end_time - start_time), 2))
             # 绘制图像
             if round_num % 100 == 0:
-                self.plot_acc_loss(acc_list, loss_train, loss_test, round_num)
+                save_fig(args, acc_list, loss_train, loss_test, round_num)
 
         # 保存模型
-        torch.save(self.server_model, 'results/fedavg/models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
+        torch.save(self.server_model, args.root + 'models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
                        args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.decay, args.n_epoch, args.weight, args.i_seed))
 
         return acc_list, loss_train, loss_test
@@ -164,57 +165,8 @@ class FedSystem(object):
             n_test += data.size(0)
         return correct / n_test, test_loss / len(self.test_loader)
 
-    def plot_acc_loss(self, acc_list, loss_train, loss_test, round_num):
-        args = self.args
-        # 准确率图像
-        plt.figure()
-        plt.plot(range(len(acc_list)), acc_list)
-        plt.ylabel('Accuracy')
-        plt.xlabel('epoch')
-        plt.title('Test Accuracy')
-        plt.savefig('results/fedavg/figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
-                args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
-
-        # 损失图像
-        plt.figure()
-        plt.plot(range(len(loss_train)), loss_train)
-        plt.ylabel('Loss')
-        plt.xlabel('epoch')
-        plt.title('Train Loss')
-        plt.savefig('results/fedavg/figures/train_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
-                args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
-
-        plt.figure()
-        plt.plot(range(len(loss_test)), loss_test)
-        plt.ylabel('Loss')
-        plt.xlabel('epoch')
-        plt.title('Test Loss')
-        plt.savefig('results/fedavg/figures/test_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
-                args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
-
-
 if __name__ == '__main__':
-    # 参数设置
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--data', type=str, default='cifar10')              # 数据集
-    # parser.add_argument('--n_round', type=int, default=500)                 # 联邦学习轮数
-    # parser.add_argument('--n_client', type=int, default=20)                 # 客户端数量
-    # parser.add_argument('--activate_rate', type=float, default=0.5)         # 激活客户端比例
-    # parser.add_argument('--n_epoch', type=int, default=1)                   # 客户端训练轮数
-    # parser.add_argument('--lr', type=float, default=0.1)                    # 学习率
-    # parser.add_argument('--alpha', type=float, default=0.1)                 # Dirichlet分布参数（越大，数据异构程度越高）
-    # parser.add_argument('--decay', type=float, default=1)                   # 学习率衰减
-    # parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
-    # parser.add_argument('--csd_importance', type=float, default=1)          # 控制变量损失权重
-    # parser.add_argument('--eps', type=float, default=1e-5)                  # 表征一个极小数，避免除0
-    # parser.add_argument('--clip', type=float, default=10)                   # 梯度裁剪
-    # parser.add_argument('--train_batch_size', type=int, default=32)         # 客户端训练批次大小
-    # parser.add_argument('--test_batch_size', type=int, default=64)          # 测试批次大小
-    # parser.add_argument('--i_seed', type=int, default=10001)                 # 随机种子 1000*: 数据量均匀；2000*: 数据量不均匀；3000*: 学习率衰减
-    # parser.add_argument('--weight', type=int, default=1, help='1: datasize, 0: datasize_entropy')                    # 聚合权重，
-    # parser.add_argument('--split', type=bool, default=True, help='True：均匀划分，False：非均匀划分')  # 数据集划分方式
-    # parser.add_argument('--label_verbose', type=bool, default=False, help='是否绘制标签分布')  # 数据集划分方式
-    # args = parser.parse_args()
+    # 加载参数
     args = args_parser()
     args.root = 'results/fedavg/'
 
@@ -234,19 +186,5 @@ if __name__ == '__main__':
     acc_list, loss_train, loss_test = fed_sys.server_excute()
 
     # 保存准确率数据
-    df1 = pd.DataFrame(acc_list, columns=['accuracy'])
-    df1.to_excel('results/fedavg/data/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
-            args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.csd_importance,
-            args.decay, args.n_epoch, args.weight, args.i_seed))
-
-    # 保存损失数据
-    df2 = pd.DataFrame(loss_train, columns=['loss'])
-    df2.to_excel('results/fedavg/data/train_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
-            args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.csd_importance,
-            args.decay, args.n_epoch, args.weight, args.i_seed))
-
-    df3 = pd.DataFrame(loss_test, columns=['loss'])
-    df3.to_excel('results/fedavg/data/test_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
-            args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.csd_importance,
-            args.decay, args.n_epoch, args.weight, args.i_seed))
+    save_data(args, acc_list, loss_train, loss_test)
 
