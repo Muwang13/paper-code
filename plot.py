@@ -5,45 +5,26 @@ from scipy.signal import savgol_filter
 
 # mnist
 # 读取fedavg数据
-df11 = pd.read_excel('results/fedavg/data/acc/users_20_data_fmnist_C0.5_alpha_0.01_round_300_lr_0.1_decay_1_bs_1_w_1_seed_10001.xlsx')
-# df12 = pd.read_excel('results/fedavg/data/acc/users_50_data_mnist_C0.2_alpha_0.1_round_300_lr_0.1_decay_1_bs_1_w_1_seed_10001.xlsx')
-# df13 = pd.read_excel('results/fedavg/data/acc/users_50_data_mnist_C0.2_alpha_1_round_300_lr_0.1_decay_1_bs_1_w_1_seed_10001.xlsx')
-# df14 = pd.read_excel('results/fedavg/data/acc/users_50_data_fmnist_C0.2_alpha_100.0_round_300_lr_0.1_decay_1_bs_1_w_1_seed_10001.xlsx')
+df11 = pd.read_excel('results/fedavg/data/test_loss/users_20_data_cifar10_C0.5_alpha_0.1_round_500_lr_0.1_csd_1_decay_1_bs_1_w_1_seed_10001.xlsx')
 
 # 读取fola数据
-df21 = pd.read_excel('results/fola/data/acc/users_20_data_fmnist_C0.5_alpha_0.01_round_300_lr_0.1_decay_1_bs_1_w_1_seed_10001.xlsx')
-# df22 = pd.read_excel('results/fola/data/acc/users_50_data_mnist_C0.2_alpha_0.1_round_300_lr_0.1_decay_1_bs_1_w_1_seed_10001.xlsx')
-# df23 = pd.read_excel('results/fola/data/acc/users_50_data_mnist_C0.2_alpha_1.0_round_300_lr_0.1_decay_1_bs_1_w_1_seed_10001.xlsx')
-# df24 = pd.read_excel('results/fola/data/acc/users_50_data_fmnist_C0.2_alpha_100.0_round_300_lr_0.1_ decay_1_bs_1_w_1_seed_10001.xlsx')
+df21 = pd.read_excel('results/fola/data/test_loss/users_20_data_cifar10_C0.5_alpha_0.1_round_500_lr_0.1_csd_1_decay_1_bs_1_w_1_seed_10001.xlsx')
 
-df31 = pd.read_excel('results/ours/data/acc/users_20_data_fmnist_C0.5_alpha_0.01_round_300_lr_0.1_decay_1_bs_1_w_0_seed_20001.xlsx')
+df31 = pd.read_excel('results/fola_prior/data/test_loss/users_20_data_cifar10_C0.5_alpha_0.1_round_500_lr_0.1_csd_1_decay_1_bs_1_w_1_seed_10001.xlsx')
 
 
 df11_arr = savgol_filter(df11.iloc[:, 1].values, 11, 3)
-# df12_arr = savgol_filter(df12.iloc[:, 1].values, 11, 3)
-# df13_arr = savgol_filter(df13.iloc[:, 1].values, 11, 3)
 
 df21_arr = savgol_filter(df21.iloc[:, 1].values, 11, 3)
-# df22_arr = savgol_filter(df22.iloc[:, 1].values, 11, 3)
-# df23_arr = savgol_filter(df23.iloc[:, 1].values, 11, 3)
 
-df31_arr = df31.iloc[:, 1].values
-df31_arr_del = np.delete(df31_arr, [126, 157, 184])
-df31_arr = savgol_filter(df31_arr_del, 11, 3)
+df31_arr = savgol_filter(df31.iloc[:, 1].values, 11, 3)
 
 plt.figure()
 plt.plot(df11_arr, label='fedavg alpha 0.01', linestyle='-', c='red')
-# plt.plot(df12_arr, label='fedavg alpha 0.1', linestyle='--', c='red')
-# plt.plot(df13_arr, label='fedavg alpha 1', linestyle=':', c='red')
-# plt.plot(df14.iloc[:, 1], label='fedavg_100', linestyle='-.', c='red')
 
 plt.plot(df21_arr, label='fola alpha 0.01', linestyle='-', c='blue')
-# plt.plot(df22_arr, label='fola alpha 0.1', linestyle='--', c='blue')
-# plt.plot(df23_arr, label='fola alpha 1', linestyle=':', c='blue')
-# plt.plot(df24.iloc[:, 1], label='fola_100', linestyle='-.', c='blue')
 
 plt.plot(df31_arr, label='ours alpha 0.01', linestyle='-', c='green')
-# plt.plot(fola, label='fola_0.05 decay')
 plt.xlabel('epoch')
 plt.ylabel('Accuracy')
 plt.title('Fashion MNIST Learning curve alpha=0.01')

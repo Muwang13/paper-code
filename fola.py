@@ -13,7 +13,6 @@ from model import BasicCNN as Model, CNN_mnist as CNN
 from model import weight_init
 from dataset import dirichlet_split, plot_label_distribution, get_client_alpha, get_client_beta, dirichlet_data
 
-
 class FedSystem(object):
     def __init__(self, args):
         self.args = args
@@ -31,7 +30,7 @@ class FedSystem(object):
         # 划分数据集：数据量均匀/非均匀划分
         if args.split:
             self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client,
-                                                                  alpha=args.alpha, num_samples_per_client=2000)
+                                                                  alpha=args.alpha, num_samples_per_client=1000)
         else:
             self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client,
                                                                  alpha=args.alpha)
@@ -66,15 +65,13 @@ class FedSystem(object):
         for name, param in deepcopy(self.server_model).named_parameters():
             self.server_omega[name] = torch.zeros_like(param.data).to(device)
 
+        # 计算激活客户端数量
         client_idx_list = [i for i in range(args.n_client)]
         activate_client_num = int(args.activate_rate * args.n_client)
         assert activate_client_num > 1
         # 训练模型
         acc_list, loss_train, loss_test = [], [], []
         max_acc = 0
-        # 设置学习率衰减策略
-        # lr = args.lr
-        # lr_decay = args.decay
         for r in range(start, args.n_round):
             start_time = time.time()
             round_num = r + 1
@@ -127,7 +124,7 @@ class FedSystem(object):
                 self.plot_acc_loss(acc_list, loss_train, loss_test, round_num)
 
         # 保存模型
-        torch.save(self.server_model,'results/ours/models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
+        torch.save(self.server_model,'results/fola/models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
                        args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.decay, args.n_epoch, args.weight, args.i_seed))
 
         return acc_list, loss_train, loss_test

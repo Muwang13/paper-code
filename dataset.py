@@ -135,11 +135,10 @@ def get_client_alpha(train_set_group):
 
 def get_client_beta(train_set_group):
     client_n_sample = [len(ts.idxs) for ts in train_set_group]
-    total_n_sample = sum(client_n_sample)
     client_entropy = []
     labels_num = []
     for idx, ts in enumerate(train_set_group):
-        targets = [ts.dataset.targets[idx].item() for idx in ts.idxs]
+        targets = [ts.dataset.targets[idx] for idx in ts.idxs]
         labels = set(targets)
         print(f"client {idx}: {labels}")
         labels_num.append(len(labels))
@@ -272,7 +271,7 @@ def dirichlet_data(data_name, num_users=10, alpha = 100):
 if __name__ == '__main__':
     # 设置参数
     num_users = 10  # 假设有10个客户端
-    alpha = 0.5  # Dirichlet分布的alpha参数
+    alpha = 0.05  # Dirichlet分布的alpha参数
     num_samples_per_client = 1000  # 每个客户端有1000个样本
     data_name = 'cifar10'  # 使用CIFAR-10数据集
 

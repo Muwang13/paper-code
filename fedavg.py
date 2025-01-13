@@ -11,6 +11,9 @@ from torch.utils.data import DataLoader
 from model import BasicCNN as Model, CNN_mnist as CNN
 from model import weight_init
 from dataset import dirichlet_split, plot_label_distribution, get_client_alpha, get_client_beta, dirichlet_data
+from utils.options import args_parser
+from utils.set_seed import set_seed
+
 
 class FedSystem(object):
     def __init__(self, args):
@@ -23,11 +26,11 @@ class FedSystem(object):
             # 否则使用BasicCNN模型
             self.server_model = Model().to(args.device)
             self.client_model_set = [Model() for _ in range(args.n_client)]
-        print(self.server_model)
+        # print(self.server_model)
         # 划分数据集：数据量均匀/非均匀划分
         if args.split:
             self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client,
-                                                                  alpha=args.alpha, num_samples_per_client=2000)
+                                                                  alpha=args.alpha, num_samples_per_client=1000)
         else:
             self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client,
                                                                  alpha=args.alpha)
@@ -46,6 +49,7 @@ class FedSystem(object):
             self.client_alpha = get_client_beta(self.train_set_group)
         print("聚合权重：", self.client_alpha)
         self.criterion = nn.CrossEntropyLoss()
+        # self.root = 'results/fedavg/'
 
     def server_excute(self):
         start = 0
@@ -58,6 +62,7 @@ class FedSystem(object):
         for client_idx in range(args.n_client):
             self.client_model_set[client_idx].load_state_dict(init_state_dict)
 
+        # 激活客户端
         client_idx_list = [i for i in range(args.n_client)]
         activate_client_num = int(args.activate_rate * args.n_client)
         assert activate_client_num > 1
@@ -65,9 +70,6 @@ class FedSystem(object):
         # 训练模型
         acc_list, loss_train, loss_test = [], [], []
         max_acc = 0
-        # 设置学习率衰减策略
-        # lr = args.lr
-        # lr_decay = args.decay
         for r in range(start, args.n_round):
             start_time = time.time()
             round_num = r + 1
@@ -160,7 +162,7 @@ class FedSystem(object):
             _, predicted = scores.max(1)
             correct += predicted.eq(target.view_as(predicted)).sum().item()
             n_test += data.size(0)
-        return correct / n_test, test_loss
+        return correct / n_test, test_loss / len(self.test_loader)
 
     def plot_acc_loss(self, acc_list, loss_train, loss_test, round_num):
         args = self.args
@@ -169,6 +171,7 @@ class FedSystem(object):
         plt.plot(range(len(acc_list)), acc_list)
         plt.ylabel('Accuracy')
         plt.xlabel('epoch')
+        plt.title('Test Accuracy')
         plt.savefig('results/fedavg/figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
                 args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
 
@@ -177,6 +180,7 @@ class FedSystem(object):
         plt.plot(range(len(loss_train)), loss_train)
         plt.ylabel('Loss')
         plt.xlabel('epoch')
+        plt.title('Train Loss')
         plt.savefig('results/fedavg/figures/train_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
                 args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
 
@@ -184,32 +188,35 @@ class FedSystem(object):
         plt.plot(range(len(loss_test)), loss_test)
         plt.ylabel('Loss')
         plt.xlabel('epoch')
+        plt.title('Test Loss')
         plt.savefig('results/fedavg/figures/test_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
                 args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
 
 
 if __name__ == '__main__':
     # 参数设置
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='cifar10')              # 数据集
-    parser.add_argument('--n_round', type=int, default=500)                 # 联邦学习轮数
-    parser.add_argument('--n_client', type=int, default=20)                 # 客户端数量
-    parser.add_argument('--activate_rate', type=float, default=0.5)         # 激活客户端比例
-    parser.add_argument('--n_epoch', type=int, default=1)                   # 客户端训练轮数
-    parser.add_argument('--lr', type=float, default=0.1)                    # 学习率
-    parser.add_argument('--alpha', type=float, default=0.1)                   # Dirichlet分布参数（越大，数据异构程度越高）
-    parser.add_argument('--decay', type=float, default=1)                   # 学习率衰减
-    parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
-    parser.add_argument('--csd_importance', type=float, default=1)          # 控制变量损失权重
-    parser.add_argument('--eps', type=float, default=1e-5)                  # 表征一个极小数，避免除0
-    parser.add_argument('--clip', type=float, default=10)                   # 梯度裁剪
-    parser.add_argument('--train_batch_size', type=int, default=32)         # 客户端训练批次大小
-    parser.add_argument('--test_batch_size', type=int, default=64)          # 测试批次大小
-    parser.add_argument('--i_seed', type=int, default=10001)                 # 随机种子 1000*: 数据量均匀；2000*: 数据量不均匀；3000*: 学习率衰减
-    parser.add_argument('--weight', type=int, default=1, help='1: datasize, 0: datasize_entropy')                    # 聚合权重，
-    parser.add_argument('--split', type=bool, default=True, help='True：均匀划分，False：非均匀划分')  # 数据集划分方式
-    parser.add_argument('--label_verbose', type=bool, default=False, help='是否绘制标签分布')  # 数据集划分方式
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--data', type=str, default='cifar10')              # 数据集
+    # parser.add_argument('--n_round', type=int, default=500)                 # 联邦学习轮数
+    # parser.add_argument('--n_client', type=int, default=20)                 # 客户端数量
+    # parser.add_argument('--activate_rate', type=float, default=0.5)         # 激活客户端比例
+    # parser.add_argument('--n_epoch', type=int, default=1)                   # 客户端训练轮数
+    # parser.add_argument('--lr', type=float, default=0.1)                    # 学习率
+    # parser.add_argument('--alpha', type=float, default=0.1)                 # Dirichlet分布参数（越大，数据异构程度越高）
+    # parser.add_argument('--decay', type=float, default=1)                   # 学习率衰减
+    # parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
+    # parser.add_argument('--csd_importance', type=float, default=1)          # 控制变量损失权重
+    # parser.add_argument('--eps', type=float, default=1e-5)                  # 表征一个极小数，避免除0
+    # parser.add_argument('--clip', type=float, default=10)                   # 梯度裁剪
+    # parser.add_argument('--train_batch_size', type=int, default=32)         # 客户端训练批次大小
+    # parser.add_argument('--test_batch_size', type=int, default=64)          # 测试批次大小
+    # parser.add_argument('--i_seed', type=int, default=10001)                 # 随机种子 1000*: 数据量均匀；2000*: 数据量不均匀；3000*: 学习率衰减
+    # parser.add_argument('--weight', type=int, default=1, help='1: datasize, 0: datasize_entropy')                    # 聚合权重，
+    # parser.add_argument('--split', type=bool, default=True, help='True：均匀划分，False：非均匀划分')  # 数据集划分方式
+    # parser.add_argument('--label_verbose', type=bool, default=False, help='是否绘制标签分布')  # 数据集划分方式
+    # args = parser.parse_args()
+    args = args_parser()
+    args.root = 'results/fedavg/'
 
     # 训练设备
     cuda = torch.cuda.is_available()
@@ -218,12 +225,10 @@ if __name__ == '__main__':
 
     print(f"data {args.data}, n_round {args.n_round}, n_client {args.n_client}, activate rate {args.activate_rate}, n_epoch {args.n_epoch}, "
           f"lr {args.lr}, alpha {args.alpha}, batch_size {args.train_batch_size}, pruing_p {args.pruing_p}, "
-          f"csd_importance {args.csd_importance}, seed {args.i_seed}, decay {args.decay}")
+          f"csd_importance {args.csd_importance}, seed {args.i_seed}, decay {args.decay}, weight {args.weight}, split {args.split}")
 
     # 设置随机数种子
-    np.random.seed(args.i_seed)
-    torch.manual_seed(args.i_seed)
-    random.seed(args.i_seed)
+    set_seed(args.i_seed)
 
     fed_sys = FedSystem(args)
     acc_list, loss_train, loss_test = fed_sys.server_excute()
