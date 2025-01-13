@@ -11,17 +11,29 @@ from torch.utils.data import DataLoader
 from model import BasicCNN as Model, CNN_mnist as CNN
 from model import weight_init
 from dataset import dirichlet_split, plot_label_distribution, get_client_alpha, get_client_beta, dirichlet_data
-# from dirichlet_data import dirichlet_data
 
 class FedSystem(object):
     def __init__(self, args):
         self.args = args
-        self.server_model = Model().to(args.device)
-        self.client_model_set = [Model() for _ in range(args.n_client)]
-        # self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client, alpha=args.alpha, num_samples_per_client=1000)
-        self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client, alpha=args.alpha)
+        # 如果是mnist或者fmnist数据集，使用CNN模型
+        if args.data == 'mnist' or args.data == 'fmnist':
+            self.server_model = CNN().to(args.device)
+            self.client_model_set = [CNN() for _ in range(args.n_client)]
+        else:
+            # 否则使用BasicCNN模型
+            self.server_model = Model().to(args.device)
+            self.client_model_set = [Model() for _ in range(args.n_client)]
+        print(self.server_model)
+        # 划分数据集：数据量均匀/非均匀划分
+        if args.split:
+            self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client,
+                                                                  alpha=args.alpha, num_samples_per_client=2000)
+        else:
+            self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client,
+                                                                 alpha=args.alpha)
         # 绘制客户端的数据标签分布
-        # plot_label_distribution(args.n_client, self.train_set_group)
+        if args.label_verbose:
+            plot_label_distribution(args.n_client, self.train_set_group)
         print("客户端数据量：", [len(ts.idxs) for ts in self.train_set_group])
         self.train_loader_group = [DataLoader(train_set, batch_size=args.train_batch_size, shuffle=True) for train_set in self.train_set_group]
         self.test_loader = DataLoader(self.test_set, batch_size=args.test_batch_size, shuffle=True)
@@ -51,32 +63,35 @@ class FedSystem(object):
         assert activate_client_num > 1
 
         # 训练模型
-        acc_list, loss_list = [],[]
+        acc_list, loss_train, loss_test = [], [], []
         max_acc = 0
-        lr = args.lr
-        lr_decay = args.decay  # 0.997
+        # 设置学习率衰减策略
+        # lr = args.lr
+        # lr_decay = args.decay
         for r in range(start, args.n_round):
             start_time = time.time()
             round_num = r + 1
             print('round_num -- ', round_num)
 
-            if args.activate_rate<1:
+            if args.activate_rate < 1:
                 activate_clients = random.sample(client_idx_list, activate_client_num)
             else:
                 activate_clients = client_idx_list
             alpha_sum = sum([self.client_alpha[idx] for idx in activate_clients])
             local_loss = []
-
             for client_idx in activate_clients:
-                loss = self.client_update(client_idx, round_num, lr)
+                loss = self.client_update(client_idx, round_num, args.lr)
                 local_loss.append(loss)
-            loss_list.append(sum(local_loss) / len(local_loss))
+
+            # 记录训练损失(所有客户端的平均损失：基于客户端数据量加权计算)
+            client_num = [len(ts.idxs) for ts in self.train_set_group]
+            loss_epoch = sum([c_loss * ts / sum(client_num) for c_loss, ts in zip(local_loss, client_num)])
+            loss_train.append(loss_epoch)
 
             new_param = {}
             with torch.no_grad():
                 for name, param in self.server_model.named_parameters():
                     new_param[name] = param.data.zero_()
-
                     for client_idx in activate_clients:
                         # todo 加权聚合（对比一下不加权的方式）
                         new_param[name] += (self.client_alpha[client_idx]/alpha_sum) * self.client_model_set[client_idx].state_dict()[name].to(device)
@@ -86,49 +101,23 @@ class FedSystem(object):
                     for client_idx in range(args.n_client):
                         self.client_model_set[client_idx].state_dict()[name].data.copy_(new_param[name].cpu())
 
-            acc = self.test_server_model()
+            acc, t_loss = self.test_server_model()
             max_acc = max(max_acc, acc)
             acc_list.append(acc)
-            print(f'******* round = {r + 1} | acc = {round(acc, 4)} | max_acc = {round(max_acc, 4)} *******')
+            loss_test.append(t_loss)
+            print(f'******* round = {r + 1} | acc = {round(acc, 4)} | max_acc = {round(max_acc, 4)} | train_loss = {loss_epoch} | test_loss = {t_loss} *******')
 
-            lr = lr * lr_decay
-            # 绘制图像
-            if round_num % 100 == 0:
-                # 准确率图像
-                plt.figure()
-                plt.plot(range(len(acc_list)), acc_list)
-                plt.ylabel('Accuracy')
-                plt.xlabel('epoch')
-                plt.savefig('results/fedavg/figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay, args.n_epoch, args.weight, args.i_seed))
-
-                # 损失图像
-                plt.figure()
-                plt.plot(range(len(loss_list)), loss_list)
-                plt.ylabel('Loss')
-                plt.xlabel('epoch')
-                plt.savefig('results/fedavg/figures/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
-                    args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,  args.n_epoch, args.weight, args.i_seed))
-
-                if round_num % 300 == 0:
-                    # 保存准确率数据
-                    df1 = pd.DataFrame(acc_list, columns=['accuracy'])
-                    df1.to_excel('results/fedavg/data/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
-                        args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,  args.n_epoch, args.weight, args.i_seed))
-
-                    # 保存损失数据
-                    df2 = pd.DataFrame(loss_list, columns=['loss'])
-                    df2.to_excel('results/fedavg/data/loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
-                        args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,  args.n_epoch, args.weight, args.i_seed))
-
-                    # 保存模型
-                    torch.save(self.server_model,'results/fedavg/models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
-                         args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.decay,  args.n_epoch, args.weight, args.i_seed))
-
-                    print("save data successfully!")
             end_time = time.time()
             print('---epoch time: %s seconds ---' % round((end_time - start_time), 2))
-        # return acc_list
+            # 绘制图像
+            if round_num % 100 == 0:
+                self.plot_acc_loss(acc_list, loss_train, loss_test, round_num)
+
+        # 保存模型
+        torch.save(self.server_model, 'results/fedavg/models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
+                       args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.decay, args.n_epoch, args.weight, args.i_seed))
+
+        return acc_list, loss_train, loss_test
 
     def client_update(self, client_idx, round_num, lr):
         log_ce_loss = 0
@@ -152,42 +141,74 @@ class FedSystem(object):
 
         log_ce_loss /= args.n_epoch
         # log_csd_loss = 0
-        print(f'client_idx = {client_idx + 1} | loss = {log_ce_loss + log_csd_loss} (ce: {log_ce_loss} + csd: {log_csd_loss})')
+        loss = log_ce_loss + log_csd_loss
+        print(f'client_idx = {client_idx + 1} | loss = {loss} (ce: {log_ce_loss} + csd: {log_csd_loss})')
         self.client_model_set[client_idx] = self.client_model_set[client_idx].cpu()
-        return log_ce_loss + log_csd_loss
+        return loss
 
     def test_server_model(self):
         self.server_model.eval()
         correct = 0
         n_test = 0
         device = self.args.device
+        test_loss = 0
         for data, target in self.test_loader:
             data, target = data.to(device), target.to(device)
             scores = self.server_model(data)
+            loss = self.criterion(scores, target)
+            test_loss += loss.item()
             _, predicted = scores.max(1)
             correct += predicted.eq(target.view_as(predicted)).sum().item()
             n_test += data.size(0)
-        return correct / n_test
+        return correct / n_test, test_loss
+
+    def plot_acc_loss(self, acc_list, loss_train, loss_test, round_num):
+        args = self.args
+        # 准确率图像
+        plt.figure()
+        plt.plot(range(len(acc_list)), acc_list)
+        plt.ylabel('Accuracy')
+        plt.xlabel('epoch')
+        plt.savefig('results/fedavg/figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
+                args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
+
+        # 损失图像
+        plt.figure()
+        plt.plot(range(len(loss_train)), loss_train)
+        plt.ylabel('Loss')
+        plt.xlabel('epoch')
+        plt.savefig('results/fedavg/figures/train_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
+                args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
+
+        plt.figure()
+        plt.plot(range(len(loss_test)), loss_test)
+        plt.ylabel('Loss')
+        plt.xlabel('epoch')
+        plt.savefig('results/fedavg/figures/test_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
+                args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
+
 
 if __name__ == '__main__':
     # 参数设置
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='cifar10')              # 数据集
-    parser.add_argument('--n_round', type=int, default=300)                 # 联邦学习轮数
-    parser.add_argument('--n_client', type=int, default=50)                 # 客户端数量
-    parser.add_argument('--activate_rate', type=float, default=0.2)         # 激活客户端比例
+    parser.add_argument('--n_round', type=int, default=500)                 # 联邦学习轮数
+    parser.add_argument('--n_client', type=int, default=20)                 # 客户端数量
+    parser.add_argument('--activate_rate', type=float, default=0.5)         # 激活客户端比例
     parser.add_argument('--n_epoch', type=int, default=1)                   # 客户端训练轮数
     parser.add_argument('--lr', type=float, default=0.1)                    # 学习率
-    parser.add_argument('--alpha', type=float, default=1)                   # Dirichlet分布参数（越大，数据异构程度越高）
+    parser.add_argument('--alpha', type=float, default=0.1)                   # Dirichlet分布参数（越大，数据异构程度越高）
     parser.add_argument('--decay', type=float, default=1)                   # 学习率衰减
     parser.add_argument('--pruing_p', type=float, default=0)                # 剪枝比例
-    parser.add_argument('--csd_importance', type=float, default=0)          # 控制变量损失权重
+    parser.add_argument('--csd_importance', type=float, default=1)          # 控制变量损失权重
     parser.add_argument('--eps', type=float, default=1e-5)                  # 表征一个极小数，避免除0
     parser.add_argument('--clip', type=float, default=10)                   # 梯度裁剪
     parser.add_argument('--train_batch_size', type=int, default=32)         # 客户端训练批次大小
     parser.add_argument('--test_batch_size', type=int, default=64)          # 测试批次大小
     parser.add_argument('--i_seed', type=int, default=10001)                 # 随机种子 1000*: 数据量均匀；2000*: 数据量不均匀；3000*: 学习率衰减
     parser.add_argument('--weight', type=int, default=1, help='1: datasize, 0: datasize_entropy')                    # 聚合权重，
+    parser.add_argument('--split', type=bool, default=True, help='True：均匀划分，False：非均匀划分')  # 数据集划分方式
+    parser.add_argument('--label_verbose', type=bool, default=False, help='是否绘制标签分布')  # 数据集划分方式
     args = parser.parse_args()
 
     # 训练设备
@@ -205,4 +226,22 @@ if __name__ == '__main__':
     random.seed(args.i_seed)
 
     fed_sys = FedSystem(args)
-    fed_sys.server_excute()
+    acc_list, loss_train, loss_test = fed_sys.server_excute()
+
+    # 保存准确率数据
+    df1 = pd.DataFrame(acc_list, columns=['accuracy'])
+    df1.to_excel('results/fedavg/data/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
+            args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.csd_importance,
+            args.decay, args.n_epoch, args.weight, args.i_seed))
+
+    # 保存损失数据
+    df2 = pd.DataFrame(loss_train, columns=['loss'])
+    df2.to_excel('results/fedavg/data/train_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
+            args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.csd_importance,
+            args.decay, args.n_epoch, args.weight, args.i_seed))
+
+    df3 = pd.DataFrame(loss_test, columns=['loss'])
+    df3.to_excel('results/fedavg/data/test_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.xlsx'.format(
+            args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.csd_importance,
+            args.decay, args.n_epoch, args.weight, args.i_seed))
+
