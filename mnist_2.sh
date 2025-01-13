@@ -5,7 +5,7 @@ epoch_length=2
 py_number=3
 #weights_length=2
 
-hp='--data=mnist --alpha=0.05 --n_round=300 --n_client=50 --activate_rate 0.2 --pruing_p=0 --i_seed=10001 --split=True'
+hp='--data=mnist --alpha=0.1 --n_round=300 --n_client=50 --activate_rate 0.2 --pruing_p=0 --i_seed=10001 --split=True'
 #alpha=('0.05' '0.1' '1')
 csd=('1' '10' '100')
 epoch_num=('1' '3')
