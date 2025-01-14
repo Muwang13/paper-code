@@ -172,6 +172,7 @@ class FedSystem(object):
         log_ce_loss = 0
         log_csd_loss = 0
         device = self.args.device
+        args = self.args
         self.client_model_set[client_idx] = self.client_model_set[client_idx].to(device)
         optimizer = optim.SGD(self.client_model_set[client_idx].parameters(), lr=lr)
 
@@ -208,7 +209,7 @@ class FedSystem(object):
         log_ce_loss /= args.n_epoch
         log_csd_loss /= (args.n_epoch / args.csd_importance) if args.csd_importance > 0 else 1
         loss = log_ce_loss + log_csd_loss
-        print(f'client_idx = {client_idx + 1} | test_loss = {loss} (ce: {log_ce_loss} + csd: {log_csd_loss})')
+        print(f'client_idx = {client_idx + 1} | loss = {loss} (ce: {log_ce_loss} + csd: {log_csd_loss})')
         self.client_model_set[client_idx] = self.client_model_set[client_idx].cpu()
 
         # 更新协方差的迹、kl散度、模型差的二范数
@@ -258,11 +259,7 @@ class FedSystem(object):
         self.client_kl_set[client_idx] = self.cal_kl(client_idx)
         self.client_norm_set[client_idx] = self.cal_norm(client_idx)
 
-if __name__ == '__main__':
-    # 加载参数
-    args = args_parser()
-    args.root = 'results/ours/'
-
+def main(args):
     # 训练设备
     cuda = torch.cuda.is_available()
     args.device = torch.device('cuda') if cuda else torch.device('cpu')
@@ -280,3 +277,9 @@ if __name__ == '__main__':
 
     # 保存准确率数据
     save_data(args, acc_list, loss_train, loss_test)
+
+if __name__ == '__main__':
+    # 加载参数
+    args = args_parser()
+    args.root = 'results/ours/'
+    main(args)

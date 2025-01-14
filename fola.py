@@ -128,7 +128,7 @@ class FedSystem(object):
                 save_fig(args, acc_list, loss_train, loss_test, round_num)
 
         # 保存模型
-        torch.save(self.server_model,args.root + 'models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
+        torch.save(self.server_model, args.root + 'models/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.pt'.format(
                        args.n_client, args.data, args.activate_rate, args.alpha, args.n_round, args.lr, args.csd_importance, args.decay, args.n_epoch, args.weight, args.i_seed))
 
         return acc_list, loss_train, loss_test
@@ -149,6 +149,7 @@ class FedSystem(object):
         log_ce_loss = 0
         log_csd_loss = 0
         device = self.args.device
+        args = self.args
         self.client_model_set[client_idx] = self.client_model_set[client_idx].to(device)
         optimizer = optim.SGD(self.client_model_set[client_idx].parameters(), lr=lr)
 
@@ -185,9 +186,8 @@ class FedSystem(object):
         log_ce_loss /= args.n_epoch
         log_csd_loss /= (args.n_epoch / args.csd_importance) if args.csd_importance > 0 else 1
         loss = log_ce_loss + log_csd_loss
-        print(f'client_idx = {client_idx + 1} | test_loss = {loss} (ce: {log_ce_loss} + csd: {log_csd_loss})')
+        print(f'client_idx = {client_idx + 1} | loss = {loss} (ce: {log_ce_loss} + csd: {log_csd_loss})')
         self.client_model_set[client_idx] = self.client_model_set[client_idx].cpu()
-
         return loss
 
     def test_server_model(self):
@@ -206,11 +206,7 @@ class FedSystem(object):
             n_test += data.size(0)
         return correct / n_test, test_loss / len(self.test_loader)
 
-if __name__ == '__main__':
-    # 加载参数
-    args = args_parser()
-    args.root = 'results/fola/'
-
+def main(args):
     # 训练设备
     cuda = torch.cuda.is_available()
     args.device = torch.device('cuda') if cuda else torch.device('cpu')
@@ -228,3 +224,9 @@ if __name__ == '__main__':
 
     # 保存准确率数据
     save_data(args, acc_list, loss_train, loss_test)
+
+if __name__ == '__main__':
+    # 加载参数
+    args = args_parser()
+    args.root = 'results/fola/'
+    main(args)

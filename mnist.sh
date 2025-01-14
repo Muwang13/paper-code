@@ -26,14 +26,14 @@ for((e=0; e<epoch_length; e++))
                         if [ $p == 0 ]
                         then
                             echo "Run AVG No Csd"
-                            python ${paras[p]} ${hp} '--n_epoch='${epoch_num[e]} '--csd_importance=0' '--weight=1'
+                            python3 ${paras[p]} ${hp} '--n_epoch='${epoch_num[e]} '--csd_importance=0' '--weight=1'
                         elif [ $p == 1 ]
                         then
                            echo "Run FOLA with Csd"
                            for((c=0; c<csd_length; c++))
                                 do
                                     {
-                                        python ${paras[p]} ${hp} '--n_epoch='${epoch_num[e]} '--csd_importance='${csd[c]} '--weight=1'
+                                        python3 ${paras[p]} ${hp} '--n_epoch='${epoch_num[e]} '--csd_importance='${csd[c]} '--weight=1'
                                     }
                            done
                         else
@@ -41,7 +41,7 @@ for((e=0; e<epoch_length; e++))
                            for((c=0; c<csd_length; c++))
                                 do
                                     {
-                                        python ${paras[p]} ${hp} '--n_epoch='${epoch_num[e]} '--csd_importance='${csd[c]} '--weight=0'
+                                        python3 ${paras[p]} ${hp} '--n_epoch='${epoch_num[e]} '--csd_importance='${csd[c]} '--weight=0'
                                     }
                            done
                         fi
