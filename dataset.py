@@ -140,7 +140,7 @@ def get_client_beta(train_set_group):
     for idx, ts in enumerate(train_set_group):
         targets = [ts.dataset.targets[idx] for idx in ts.idxs]
         labels = set(targets)
-        print(f"client {idx}: {labels}")
+        # print(f"client {idx}: {labels}")
         labels_num.append(len(labels))
         counts = [targets.count(label) for label in labels]
         client_entropy.append(get_entropy(counts))

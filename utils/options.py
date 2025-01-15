@@ -17,9 +17,11 @@ def args_parser():
     parser.add_argument('--train_batch_size', type=int, default=32)         # 客户端训练批次大小
     parser.add_argument('--test_batch_size', type=int, default=64)          # 测试批次大小
     parser.add_argument('--i_seed', type=int, default=10001)                 # 随机种子 1000*: 数据量均匀；2000*: 数据量不均匀；3000*: 学习率衰减
-    parser.add_argument('--weight', type=int, default=1, help='1: datasize, 0: datasize_entropy')                    # 聚合权重，
+    parser.add_argument('--weight', type=int, default=0, help='1: datasize, 0: datasize_entropy')                    # 聚合权重，
     parser.add_argument('--split', type=bool, default=True, help='True：均匀划分，False：非均匀划分')  # 数据集划分方式
     parser.add_argument('--label_verbose', type=bool, default=False, help='是否绘制标签分布')  # 数据集划分方式
     parser.add_argument('--root', type=str, default='results/fedacg/')             # 结果保存路径
+    parser.add_argument('--data_nums', type=int, default=1000, help='datasize for each client when splited average')
+    parser.add_argument('--plot_num', type=int, default=100)
     args = parser.parse_args()
     return args

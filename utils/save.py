@@ -12,6 +12,7 @@ def save_fig(args, acc_list, loss_train, loss_test, round_num):
     plt.savefig(args.root + 'figures/acc/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
             args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance,
             args.decay, args.n_epoch, args.weight, args.i_seed))
+    plt.close()
 
     # 损失图像
     plt.figure()
@@ -22,6 +23,7 @@ def save_fig(args, acc_list, loss_train, loss_test, round_num):
     plt.savefig(args.root + 'figures/train_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
             args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance,
             args.decay, args.n_epoch, args.weight, args.i_seed))
+    plt.close()
 
     plt.figure()
     plt.plot(range(len(loss_test)), loss_test)
@@ -31,6 +33,7 @@ def save_fig(args, acc_list, loss_train, loss_test, round_num):
     plt.savefig(args.root + 'figures/test_loss/users_{}_data_{}_C{}_alpha_{}_round_{}_lr_{}_csd_{}_decay_{}_bs_{}_w_{}_seed_{}.png'.format(
             args.n_client, args.data, args.activate_rate, args.alpha, round_num, args.lr, args.csd_importance,
             args.decay, args.n_epoch, args.weight, args.i_seed))
+    plt.close()
 
 
 def save_data(args, acc_list, loss_train, loss_test):

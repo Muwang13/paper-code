@@ -36,7 +36,7 @@ class FedSystem(object):
         # 划分数据集：数据量均匀/非均匀划分
         if args.split:
             self.train_set_group, self.test_set = dirichlet_split(data_name=args.data, num_users=args.n_client,
-                                                                  alpha=args.alpha, num_samples_per_client=1000)
+                                                                  alpha=args.alpha, num_samples_per_client=args.data_nums)
         else:
             self.train_set_group, self.test_set = dirichlet_data(data_name=args.data, num_users=args.n_client,
                                                                  alpha=args.alpha)
@@ -147,7 +147,7 @@ class FedSystem(object):
             end_time = time.time()
             print('---epoch time: %s seconds ---' % round((end_time - start_time), 2))
             # 绘制图像
-            if round_num % 100 == 0:
+            if round_num % args.plot_num == 0:
                 save_fig(args, acc_list, loss_train, loss_test, round_num)
 
         # 保存模型
@@ -252,7 +252,7 @@ class FedSystem(object):
         # 初始化全局分布
         mu = torch.cat([param.flatten() for _, param in self.server_model.named_parameters()], dim=0)
         omega = torch.cat([param.flatten() for param in self.server_omega.values()], dim=0)
-        self.server_dist = D.Normal(mu, F.softplus(1 / (omega + args.eps)).clamp_max(100))  # todo 限制标准差最大为100（是否合适）
+        self.server_dist = D.Normal(mu, F.softplus(1 / (omega + self.args.eps)).clamp_max(100))  # todo 限制标准差最大为100（是否合适）
 
     def update_client_info(self, client_idx):
         self.client_tr_set[client_idx] = sum([torch.sum(param) for param in self.client_omega_set[client_idx].values()])
