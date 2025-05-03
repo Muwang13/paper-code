@@ -12,6 +12,7 @@
 # Mine
 data/
 results/
+labels distribution/
 README.md
 LICENSE
 .gitignore
